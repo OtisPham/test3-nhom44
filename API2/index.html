@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Hệ thống Quản lý User - Chủ Tịch Nhi</title>
+    <script src="https://cdn.jsdelivr.net/npm/jwt-decode@3.1.2/build/jwt-decode.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; padding: 20px; }
+        .container { max-width: 850px; margin: auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        h2 { color: #1c1e21; text-align: center; margin-bottom: 25px; }
+        
+        /* Tab chọn Đăng nhập / Đăng ký */
+        .auth-tabs { display: flex; justify-content: center; margin-bottom: 20px; border-bottom: 2px solid #ddd; }
+        .tab { padding: 10px 30px; cursor: pointer; font-weight: bold; color: #606770; transition: 0.3s; }
+        .tab.active { color: #1877f2; border-bottom: 3px solid #1877f2; }
+
+        /* Thanh trạng thái Token */
+        .token-status { 
+            background: #1c1e21; color: #2ecc71; padding: 15px; border-radius: 10px; 
+            margin-bottom: 25px; font-family: 'Consolas', monospace; border-left: 6px solid #2ecc71;
+            display: none;
+        }
+        #countdown { color: #f1c40f; font-size: 1.1em; }
+
+        .form-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+        input { padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; }
+        input:focus { border-color: #1877f2; box-shadow: 0 0 5px rgba(24,119,242,0.3); }
+
+        .btn-container { text-align: center; }
+        button { padding: 12px 25px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; color: white; }
+        .btn-primary { background-color: #1877f2; width: 100%; font-size: 16px; }
+        .btn-primary:hover { background-color: #166fe5; }
+        
+        .btn-refresh { background-color: #42b72a; margin-top: 20px; margin-bottom: 10px; }
+        .btn-update { background-color: #007bff; }
+        .btn-delete { background-color: #fa3e3e; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #fff; }
+        th, td { padding: 15px; border-bottom: 1px solid #eee; text-align: left; }
+        th { background-color: #f8f9fa; color: #4b4f56; }
+        .action-btns { display: flex; gap: 8px; }
+        .expired { color: #ff4d4d !important; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2><span id="formTitle">Đăng Ký</span> Hệ Thống</h2>
+
+    <div class="token-status" id="tokenBox">
+        <div>🔒 Trạng thái: <span id="tokenMsg">Chưa đăng nhập</span></div>
+        <div>⏳ Hết hạn: <span id="countdown">00:00:00</span></div>
+    </div>
+
+    <div class="auth-tabs">
+        <div class="tab active" id="tabRegister" onclick="switchTab('register')">Đăng Ký</div>
+        <div class="tab" id="tabLogin" onclick="switchTab('login')">Đăng Nhập</div>
+    </div>
+
+    <div class="form-group">
+        <input type="hidden" id="userId"> 
+        <input type="text" id="name" placeholder="Họ và tên">
+        <input type="email" id="email" placeholder="Email">
+        <input type="password" id="password" placeholder="Mật khẩu">
+    </div>
+    
+    <div class="btn-container">
+        <button class="btn-primary" id="mainBtn" onclick="handleAuth()">Xác Nhận Đăng Ký</button>
+        <button class="btn-update" id="patchBtn" style="display:none;" onclick="patchUser()">Lưu thay đổi (PATCH)</button>
+    </div>
+
+    <hr style="margin-top: 30px; border: 0; border-top: 1px solid #eee;">
+
+    <button class="btn-refresh" onclick="getUsers()">🔄 Làm mới danh sách (GET)</button>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Tên</th>
+                <th>Email</th>
+                <th>Hành động</th>
+            </tr>
+        </thead>
+        <tbody id="userTableBody"></tbody>
+    </table>
+</div>
+
+<script>
+    const API_URL = 'http://localhost:3000/api'; // Đường dẫn gốc
+    let currentMode = 'register';
+    let countdownTimer = null;
+
+    // --- CHUYỂN ĐỔI TAB ---
+    function switchTab(mode) {
+        currentMode = mode;
+        const tabReg = document.getElementById('tabRegister');
+        const tabLog = document.getElementById('tabLogin');
+        const nameInput = document.getElementById('name');
+        const mainBtn = document.getElementById('mainBtn');
+        const formTitle = document.getElementById('formTitle');
+
+        if (mode === 'register') {
+            tabReg.classList.add('active');
+            tabLog.classList.remove('active');
+            nameInput.style.display = 'block';
+            mainBtn.innerText = 'Xác Nhận Đăng Ký';
+            formTitle.innerText = 'Đăng Ký';
+        } else {
+            tabLog.classList.add('active');
+            tabReg.classList.remove('active');
+            nameInput.style.display = 'none'; // Đăng nhập không cần nhập tên
+            mainBtn.innerText = 'Xác Nhận Đăng Nhập';
+            formTitle.innerText = 'Đăng Nhập';
+        }
+    }
+
+    // --- XỬ LÝ ĐĂNG KÝ / ĐĂNG NHẬP ---
+    async function handleAuth() {
+        const name = document.getElementById('name').value;
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        // Nếu là đăng ký thì cần đủ 3 trường, đăng nhập cần 2 trường
+        if (currentMode === 'register' && !name) return alert("Nhập tên nhé Chủ Tịch!");
+        if (!email || !password) return alert("Thiếu email hoặc mật khẩu kìa!");
+
+        const endpoint = currentMode === 'register' ? '/users' : '/login';
+        const bodyData = currentMode === 'register' ? { name, email, password } : { email, password };
+
+        try {
+            const res = await fetch(API_URL + endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyData)
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                alert(data.message);
+                localStorage.setItem('token', data.token);
+                startTokenCountdown(data.token);
+                if (currentMode === 'register') clearForm();
+                getUsers();
+            } else {
+                alert("Thất bại: " + data.message);
+            }
+        } catch (err) { alert("Lỗi kết nối Server!"); }
+    }
+
+    // --- ĐẾM NGƯỢC TOKEN ---
+    function startTokenCountdown(token) {
+        if (countdownTimer) clearInterval(countdownTimer);
+        document.getElementById('tokenBox').style.display = 'block';
+        
+        try {
+            const decoded = jwt_decode(token);
+            const expiryTime = decoded.exp * 1000;
+
+            countdownTimer = setInterval(() => {
+                const timeLeft = expiryTime - new Date().getTime();
+                const el = document.getElementById('countdown');
+                const msg = document.getElementById('tokenMsg');
+
+                if (timeLeft <= 0) {
+                    clearInterval(countdownTimer);
+                    el.innerText = "HẾT HẠN!";
+                    el.classList.add('expired');
+                    msg.innerText = "Cần đăng nhập lại";
+                    localStorage.removeItem('token');
+                    return;
+                }
+
+                const m = Math.floor((timeLeft / 1000 / 60) % 60);
+                const s = Math.floor((timeLeft / 1000) % 60);
+                el.innerText = `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+                el.classList.remove('expired');
+                msg.innerText = "Đang hoạt động ✅";
+            }, 1000);
+        } catch (e) { console.error("Token lỗi"); }
+    }
+
+    // --- CÁC CHỨC NĂNG CRUD ---
+    async function getUsers() {
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(API_URL + '/users', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error();
+
+            const users = await res.json();
+            const tbody = document.getElementById('userTableBody');
+            tbody.innerHTML = '';
+            users.forEach(u => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${u.id}</td>
+                        <td>${u.name}</td>
+                        <td>${u.email}</td>
+                        <td class="action-btns">
+                            <button class="btn-update" onclick="editMode(${u.id},'${u.name}','${u.email}')">Sửa</button>
+                            <button class="btn-delete" onclick="deleteUser(${u.id})">Xóa</button>
+                        </td>
+                    </tr>`;
+            });
+        } catch (e) { alert("Vui lòng đăng nhập để xem danh sách!"); }
+    }
+
+    async function deleteUser(id) {
+        if(!confirm("Xóa nhé Chủ Tịch?")) return;
+        const res = await fetch(`${API_URL}/users/${id}`, { 
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if(res.ok) { alert("Đã xóa!"); getUsers(); }
+    }
+
+    function editMode(id, name, email) {
+        document.getElementById('userId').value = id;
+        document.getElementById('name').value = name;
+        document.getElementById('email').value = email;
+        document.getElementById('password').placeholder = "Không thể sửa pass tại đây";
+        document.getElementById('password').disabled = true;
+        document.getElementById('patchBtn').style.display = 'inline-block';
+        document.getElementById('mainBtn').style.display = 'none';
+        window.scrollTo(0,0);
+    }
+
+    async function patchUser() {
+        const id = document.getElementById('userId').value;
+        const name = document.getElementById('name').value;
+        const email = document.getElementById('email').value;
+        const res = await fetch(`${API_URL}/users/${id}`, {
+            method: 'PATCH',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({ name, email })
+        });
+        if(res.ok) { alert("Xong!"); clearForm(); getUsers(); }
+    }
+
+    function clearForm() {
+        document.getElementById('name').value = '';
+        document.getElementById('email').value = '';
+        document.getElementById('password').value = '';
+        document.getElementById('password').disabled = false;
+        document.getElementById('patchBtn').style.display = 'none';
+        document.getElementById('mainBtn').style.display = 'block';
+    }
+
+    window.onload = () => {
+        const token = localStorage.getItem('token');
+        if (token) startTokenCountdown(token);
+        getUsers();
+    };
+</script>
+</body>
+</html>

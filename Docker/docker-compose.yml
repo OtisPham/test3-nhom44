@@ -1,0 +1,23 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile.be
+    container_name: api_nhom44
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+    restart: always
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile.fe
+    container_name: fe_nhom44
+    ports:
+      - "80:8081" # Bạn truy cập http://localhost để xem web
+    depends_on:
+      - backend
+    stdin_open: true
+    tty: true

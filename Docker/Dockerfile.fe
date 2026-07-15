@@ -1,0 +1,18 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Cài đặt công cụ Expo toàn cục
+RUN npm install -g expo-cli
+
+COPY Fontend/package*.json ./
+RUN npm install
+
+# Copy toàn bộ code Frontend
+COPY Fontend/ .
+
+# Expo Web thường chạy ở cổng 8081
+EXPOSE 8081
+
+# Lệnh khởi chạy giao diện Web
+CMD ["npx", "expo", "start", "--web"]
